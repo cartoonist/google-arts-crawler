@@ -7,6 +7,7 @@ import os
 import shutil
 import click
 import pyperclip
+import tempfile
 
 from selenium import webdriver
 from PIL import Image
@@ -14,6 +15,7 @@ from slugify import slugify
 
 DEFAULT_SIZE = 12000
 DEFAULT_HOST = 'artsandculture.google.com'
+DEFAULT_OUTPUT_DIR = os.path.expanduser('~/Downloads')
 
 @click.command()
 @click.option(
@@ -32,7 +34,7 @@ DEFAULT_HOST = 'artsandculture.google.com'
 )
 def main(url, size, raise_errors):
     try:
-        cleanup()
+        startup()
         url = pyperclip.paste()
         if not DEFAULT_HOST in url:
             url, size = get_user_input()
@@ -78,7 +80,7 @@ def generate_image(url, size, raise_errors, delay=5):
     time.sleep(delay)
     blobs = browser.find_elements_by_tag_name('img')
     print("> Downloading partial images..")
-    os.mkdir('blobs')
+    temp_path = tempfile.TemporaryDirectory(prefix='ga-crawler-blobs')
 
     title = slugify(browser.title)
     columns = []
@@ -105,14 +107,14 @@ def generate_image(url, size, raise_errors, delay=5):
 
             # Save blob to file
             image = (get_file_content_chrome(browser, blob.get_attribute('src')))
-            filename = 'blobs/{0}.jpg'.format(i)
+            filename = os.path.join(temp_path.name, '{0}.jpg'.format(i))
 
             with open(filename, 'wb') as f:
                 f.write(image)
 
             # Create PIL objects list
             try:
-                pil_images.append(Image.open('blobs/{0}.jpg'.format(i)))
+                pil_images.append(Image.open(filename))
             except Exception as e:
                 print("Exception raised")
                 cleanup()
@@ -138,8 +140,9 @@ def generate_image(url, size, raise_errors, delay=5):
 
     print("> Saving partial images as final image")
     grid = pil_grid(inverted_pil_images, columns)
-    grid.save('output/' + title + '-' + url[-14:] + '.jpg')
-    print("> SUCCESS! Image location: output/{0}.jpg".format(title + '-' + url[-14:]))
+    outpath = os.path.join(DEFAULT_OUTPUT_DIR, title + '-' + url[-14:] + '.jpg')
+    grid.save(outpath)
+    print("> SUCCESS! Image location: {0}".format(outpath))
     browser.close()
 
 def get_file_content_chrome(driver, uri):
@@ -180,13 +183,14 @@ def pil_grid(images, max_horiz=np.iinfo(int).max):
     return im_grid
 
 
+def startup():
+    if not os.path.exists(DEFAULT_OUTPUT_DIR):
+        os.makedirs(DEFAULT_OUTPUT_DIR)
+
+
 def cleanup():
-    try:
-        shutil.rmtree('blobs/')
-    except Exception:
-        pass
-    if not os.path.exists('output'):
-        os.makedirs('output')
+    pass
+
 
 if __name__ == '__main__':
     main()
